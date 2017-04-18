@@ -1,0 +1,121 @@
+---
+- hosts: aws
+  become: yes
+  tasks:
+  - shell: uname -r
+    ignore_errors: yes
+    register: uname_result
+
+  - name: Installing Linux Image Extra modules and packages
+    apt: name={{ item }} state=latest update_cache=yes
+    with_items:
+      - "linux-image-extra-{{ uname_result.stdout }}"
+      - "linux-image-extra-virtual"
+      - "curl"
+      - "wget"
+      - "apt-transport-https"
+      - "ca-certificates"
+      - "software-properties-common"
+      - "nano"
+      - "libgtk2.0-0"
+      - "libnss3"
+      - "libnss3-dev"
+      - "libxi6"
+      - "libgconf-2-4"
+      - "unzip"
+    tags: [basic, modules]
+
+  - name: Adding Oracle Java 8 repo
+    apt_repository:
+      repo: 'ppa:webupd8team/java'
+
+  - shell: echo debconf shared/accepted-oracle-license-v1-1 select true | debconf-set-selections
+    tags: [java, licence]
+  - shell: echo debconf shared/accepted-oracle-license-v1-1 seen true | debconf-set-selections
+    tags: [java, licence]
+
+  - name: Insatlling Oracle Java 8 and X server
+    apt: name={{ item }} state=latest force=yes
+    with_items:
+      - "oracle-java8-installer"
+      - "oracle-java8-set-default"
+      - "xvfb"
+      - "xserver-xephyr"
+    tags: [java, xserver]
+
+  - name: Installing NGINX
+    apt:
+      name: nginx
+      state: latest
+    tags: [nginx]
+
+  - name: Adding key for Docker
+    apt_key: 
+      url: https://download.docker.com/linux/ubuntu/gpg
+      state: present
+    tags: [docker, docker_key]
+
+  - shell: lsb_release -cs
+    ignore_errors: yes
+    register: lsb_release_result
+    tags: [docker]
+
+  - name: Adding Docker repo
+    apt_repository:
+      repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu  {{ lsb_release_result.stdout }} stable
+      state: present
+    tags: [docker, docker_repo]
+
+  - name: Installing Docker software
+    apt: 
+      name: docker-ce
+      state: latest
+      update_cache: yes
+    tags: [docker]
+
+  - name: Adding key for Jenkins
+    apt_key:
+      url: https://pkg.jenkins.io/debian-stable/jenkins.io.key
+      state: present
+    tags: [jenkins, jenkins_key]
+
+  - name: Adding Jenkins repo
+    apt_repository:
+      repo: deb https://pkg.jenkins.io/debian-stable binary/
+      state: present
+    tags: [jenkins, jenkins_repo]
+
+  - name: Installing Jenkins software
+    apt: 
+      name: jenkins
+      state: latest
+    tags: [jenkins]
+
+  - name: Adding Postgres key
+    apt_key:
+      url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+      state: present
+    tags: [postgres, postgres_key]
+
+  - name: Adding Postgres repo
+    apt_repository:
+      repo: deb http://apt.postgresql.org/pub/repos/apt/ trusty-pgdg main
+      state: present
+    tags: [postgres, postgres_repo]
+
+  - name: Installing Postgres software
+    apt: name={{ item }} state=present
+    with_items:
+      - "postgresql-common"
+      - "postgresql-9.4"
+      - "postgresql-contrib-9.4"
+    tags: [postgres]
+
+  - name: Starting services
+    service: name={{ item.service }} state={{ item.state }}
+    with_items:
+      - { service: "docker", state: "started" }
+      - { service: "nginx", state: "started" }
+      - { service: "jenkins", state: "started" }
+      - { service: "postgresql-9.4", state: "started"}
+    tags: services
