@@ -1,10 +1,20 @@
 ---
 - hosts: aws
   become: yes
+  vars:
+    pg_user: jenkins
+    jenkins_domain: jenkins.krusche.infra
+
   tasks:
   - shell: uname -r
     ignore_errors: yes
     register: uname_result
+
+  - name: Adding Python repo
+    apt_repository:
+      repo: "ppa:fkrull/deadsnakes-python2.7"
+      state: present
+    tags: [python]
 
   - name: Installing Linux Image Extra modules and packages
     apt: name={{ item }} state=latest update_cache=yes
@@ -23,6 +33,7 @@
       - "libxi6"
       - "libgconf-2-4"
       - "unzip"
+      - "python2.7"
     tags: [basic, modules]
 
   - name: Adding Oracle Java 8 repo
@@ -48,6 +59,12 @@
       name: nginx
       state: latest
     tags: [nginx]
+
+  - name: Copying NGINX config for Jenkins
+    template: src=./templates/nginx.conf.j2 dest=/etc/nginx/sites-enabled/nginx.conf
+    notify:
+      - nginx restart
+    tags: [nginx, nginx_config]
 
   - name: Adding key for Docker
     apt_key: 
@@ -86,9 +103,7 @@
     tags: [jenkins, jenkins_repo]
 
   - name: Installing Jenkins software
-    apt: 
-      name: jenkins
-      state: latest
+    apt: name=jenkins state=latest
     tags: [jenkins]
 
   - name: Adding Postgres key
@@ -117,5 +132,24 @@
       - { service: "docker", state: "started" }
       - { service: "nginx", state: "started" }
       - { service: "jenkins", state: "started" }
-      - { service: "postgresql-9.4", state: "started"}
+      - { service: "postgresql", state: "started"}
     tags: services
+
+  - name: Creating directory
+    file: name={{ item }} state=directory
+    with_items:
+      - /opt/pg
+    tags: [postgres, postgres_user, postgres_directory]
+
+  - name: Copying script for creating postgres user
+    template: src=./templates/pg_user.sh.j2 dest=/opt/pg/pg_user.sh mode=0776
+    tags: [postgres, postgres_user]
+
+  - name: Running script for creating postgres user
+    shell: /opt/pg/pg_user.sh
+    tags: [postgres, postgres_user]
+
+
+  handlers:
+    - name: nginx restart
+      service: name=nginx state=restarted

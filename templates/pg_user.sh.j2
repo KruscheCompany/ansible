@@ -1,0 +1,7 @@
+#!/bin/bash
+
+su - postgres -c "psql << EOF
+create user {{ pg_user }};
+alter user {{ pg_user }} superuser;
+EOF
+"
