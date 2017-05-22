@@ -1,0 +1,13 @@
+server {
+    listen 80;
+    server_name {{ api_jenkins_domain }};
+    client_max_body_size 2048M;
+    root        /var/www/html;
+
+    access_log /var/log/nginx/{{ jenkins_domain }}.access.log;
+    error_log /var/log/nginx/{{ jenkins_domain }}.error.log;
+
+    location / {
+    root {{ location_api_path }};
+    }
+}

@@ -1,0 +1,111 @@
+---
+- hosts: master
+  become: yes
+  remote_user: ubuntu
+  vars:
+    pg_user: jenkins
+    jenkins_domain: jenkins.knnlab.com
+    api_jenkins_domain: api-jenkins.knnlab.com
+    location_api_path: /opt/home/jenkins-artifacts
+
+  tasks:
+  - shell: uname -r
+    ignore_errors: yes
+    register: uname_result
+
+  - name: Adding Python repo
+    apt_repository:
+      repo: "ppa:fkrull/deadsnakes-python2.7"
+      state: present
+    tags: [python]
+
+  - name: Installing Linux Image Extra modules and packages
+    apt: name={{ item }} state=latest update_cache=yes
+    with_items:
+      - "linux-image-extra-{{ uname_result.stdout }}"
+      - "linux-image-extra-virtual"
+      - "curl"
+      - "wget"
+      - "apt-transport-https"
+      - "ca-certificates"
+      - "software-properties-common"
+      - "nano"
+      - "libgtk2.0-0"
+      - "libnss3"
+      - "libnss3-dev"
+      - "libxi6"
+      - "libgconf-2-4"
+      - "unzip"
+      - "python2.7"
+      - "git"
+      - "xvfb"
+      - "python-passlib"
+    tags: [basic, modules, packages]
+
+  - name: Adding Oracle Java 8 repo
+    apt_repository:
+      repo: 'ppa:webupd8team/java'
+
+  - shell: echo debconf shared/accepted-oracle-license-v1-1 select true | debconf-set-selections
+    tags: [java, licence]
+  - shell: echo debconf shared/accepted-oracle-license-v1-1 seen true | debconf-set-selections
+    tags: [java, licence]
+
+  - name: Insatlling Oracle Java 8 and X server
+    apt: name={{ item }} state=latest force=yes
+    with_items:
+      - "oracle-java8-installer"
+      - "oracle-java8-set-default"
+    tags: [java]
+
+  - name: Installing NGINX
+    apt:
+      name: nginx
+      state: latest
+    tags: [nginx]
+
+  - name: Generating htpasswd
+    htpasswd: path=/etc/nginx/sites-enabled/htpasswd name=someName password=somePassword
+    tags: htpasswd_gen
+
+  - name: Copying NGINX config for Jenkins
+    template: src=./templates/{{ item.src }} dest=/etc/nginx/sites-enabled/{{ item.dest }}
+    with_items:
+      - { src: "nginx.conf.j2", dest: "jenkins.conf" }
+      - { src: "nginx.api.conf.j2", dest: "api.conf" }
+    notify:
+      - nginx restart
+    tags: [nginx, nginx_config]
+
+
+  - name: Adding key for Jenkins
+    apt_key:
+      url: https://pkg.jenkins.io/debian-stable/jenkins.io.key
+      state: present
+    tags: [jenkins, jenkins_key]
+
+  - name: Adding Jenkins repo
+    apt_repository:
+      repo: deb https://pkg.jenkins.io/debian-stable binary/
+      state: present
+    tags: [jenkins, jenkins_repo]
+
+  - name: Installing Jenkins software
+    apt: name=jenkins state=latest
+    tags: [jenkins]
+
+  - name: Insert Jenkins user to sudoers file
+    lineinfile: dest=/etc/sudoers  line="jenkins ALL=NOPASSWD:/usr/bin/Xvfb"
+    tags: sudoers
+
+  - name: Starting services
+    service: name={{ item.service }} state={{ item.state }}
+    with_items:
+      - { service: "nginx", state: "started" }
+      - { service: "jenkins", state: "started" }
+    tags: services
+
+
+  handlers:
+    - name: nginx restart
+      service: name=nginx state=restarted

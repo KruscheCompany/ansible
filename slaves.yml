@@ -1,9 +1,12 @@
 ---
-- hosts: aws
+- hosts: slaves
   become: yes
+  remote_user: ubuntu
   vars:
     pg_user: jenkins
     jenkins_domain: jenkins.krusche.infra
+    api_jenkins_domain: api-jenkins.krusche.infra
+    location_api_path: /opt/artifacts
 
   tasks:
   - shell: uname -r
@@ -34,7 +37,9 @@
       - "libgconf-2-4"
       - "unzip"
       - "python2.7"
-    tags: [basic, modules]
+      - "git"
+      - "xvfb"
+    tags: [basic, modules, packages]
 
   - name: Adding Oracle Java 8 repo
     apt_repository:
@@ -54,57 +59,17 @@
       - "xserver-xephyr"
     tags: [java, xserver]
 
-  - name: Installing NGINX
-    apt:
-      name: nginx
-      state: latest
-    tags: [nginx]
+  - name: Adding Jenkins user
+    user: name=jenkins state=present home=/opt/home/jenkins
+    tags: jenkins_user
 
-  - name: Copying NGINX config for Jenkins
-    template: src=./templates/nginx.conf.j2 dest=/etc/nginx/sites-enabled/nginx.conf
-    notify:
-      - nginx restart
-    tags: [nginx, nginx_config]
+  - name: Insert Jenkins user to sudoers file
+    lineinfile: dest=/etc/sudoers line="Defaults:jenkins !requiretty"
+    tags: sudoers
 
-  - name: Adding key for Docker
-    apt_key: 
-      url: https://download.docker.com/linux/ubuntu/gpg
-      state: present
-    tags: [docker, docker_key]
-
-  - shell: lsb_release -cs
-    ignore_errors: yes
-    register: lsb_release_result
-    tags: [docker]
-
-  - name: Adding Docker repo
-    apt_repository:
-      repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu  {{ lsb_release_result.stdout }} stable
-      state: present
-    tags: [docker, docker_repo]
-
-  - name: Installing Docker software
-    apt: 
-      name: docker-ce
-      state: latest
-      update_cache: yes
-    tags: [docker]
-
-  - name: Adding key for Jenkins
-    apt_key:
-      url: https://pkg.jenkins.io/debian-stable/jenkins.io.key
-      state: present
-    tags: [jenkins, jenkins_key]
-
-  - name: Adding Jenkins repo
-    apt_repository:
-      repo: deb https://pkg.jenkins.io/debian-stable binary/
-      state: present
-    tags: [jenkins, jenkins_repo]
-
-  - name: Installing Jenkins software
-    apt: name=jenkins state=latest
-    tags: [jenkins]
+  - name: Insert Jenkins user to sudoers file
+    lineinfile: dest=/etc/sudoers  line="jenkins ALL=NOPASSWD:/usr/bin/Xvfb"
+    tags: sudoers
 
   - name: Adding Postgres key
     apt_key:
@@ -129,9 +94,6 @@
   - name: Starting services
     service: name={{ item.service }} state={{ item.state }}
     with_items:
-      - { service: "docker", state: "started" }
-      - { service: "nginx", state: "started" }
-      - { service: "jenkins", state: "started" }
       - { service: "postgresql", state: "started"}
     tags: services
 
@@ -148,8 +110,3 @@
   - name: Running script for creating postgres user
     shell: /opt/pg/pg_user.sh
     tags: [postgres, postgres_user]
-
-
-  handlers:
-    - name: nginx restart
-      service: name=nginx state=restarted

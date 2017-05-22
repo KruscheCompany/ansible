@@ -1,0 +1,90 @@
+---
+- hosts: aws-docker
+  become: yes
+  remote_user: ubuntu
+  vars:
+    docker_dir: /opt/docker
+    block_device: /dev/xvdb
+
+  tasks:
+  - shell: uname -r
+    ignore_errors: yes
+    register: uname_result
+
+  - shell: lsb_release -cs
+    ignore_errors: yes
+    register: lsb_result
+
+  - name: Creating Docker home directory
+    file: 
+      path: "{{ docker_dir }}"
+      state: directory
+    tags: [directory, docker_home]
+
+  - name: Creating Filesystem
+    filesystem:
+      fstype: ext4
+      dev:  "{{ block_device }}"
+    tags: [filesystem]
+
+  - name: Adding dev to fstab
+    mount:
+      path: /opt/docker
+      src: "{{ block_device }}"
+      fstype: ext4
+      state: present
+    tags: [fstab, mount]
+
+  - name: Creating Symlink for docker home
+    file:
+      src: "{{ docker_dir }}"
+      dest: /var/lib/docker
+      owner: root
+      group: root
+      state: link
+    tags: [symlink]
+
+  - name: Adding Python repo
+    apt_repository:
+      repo: "ppa:fkrull/deadsnakes-python2.7"
+      state: present
+    tags: [python]
+
+  - name: Installing Linux Image Extra modules and packages
+    apt: name={{ item }} state=latest update_cache=yes
+    with_items:
+      - "linux-image-extra-{{ uname_result.stdout }}"
+      - "linux-image-extra-virtual"
+      - "curl"
+      - "wget"
+      - "apt-transport-https"
+      - "ca-certificates"
+      - "software-properties-common"
+      - "python2.7"
+      - "git"
+      - "python-passlib"
+      - "libnss3"
+      - "libnss3-dev"
+    tags: basic
+
+  - name: Adding Docker GPG key
+    apt_key: 
+      url: https://download.docker.com/linux/ubuntu/gpg
+      state: present
+    tags: [docker, key]
+
+  - name: Adding Docker repository
+    apt_repository:
+      repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ lsb_result.stdout }} stable
+      state: present
+    tags: [docker, repository]
+
+  - name: Installing Docker software
+    apt:  name=docker-ce state=latest update_cache=yes
+    tags: [docker, docker_software]
+
+  - name: Starting services
+    service: name={{ item.service }} state={{ item.state }}
+    with_items:
+      - { service: "docker", state: "started" }
+
