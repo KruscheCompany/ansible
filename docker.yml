@@ -29,7 +29,7 @@
 
   - name: Adding dev to fstab
     mount:
-      path: /opt/docker
+      path: "{{ docker_dir }}"
       src: "{{ block_device }}"
       fstype: ext4
       state: present
