@@ -15,12 +15,6 @@
     ignore_errors: yes
     register: lsb_result
 
-  - name: Creating Docker home directory
-    file: 
-      path: "{{ docker_dir }}"
-      state: directory
-    tags: [directory, docker_home]
-
   - name: Creating Filesystem
     filesystem:
       fstype: ext4

@@ -1,17 +1,42 @@
 ---
-- hosts: master
+- hosts: slaves_without_pg
   become: yes
   remote_user: ubuntu
   vars:
-    pg_user: jenkins
-    jenkins_domain: jenkins.knnlab.com
-    api_jenkins_domain: api-jenkins.knnlab.com
-    location_api_path: /opt/home/jenkins-artifacts
+    location_api_path: /opt/artifacts
+    home_dir: /opt/home
+    jenkins_dir: /opt/home/jenkins
+    docker_dir: /opt/home/docker
+    block_device: /dev/xvdb
 
   tasks:
   - shell: uname -r
     ignore_errors: yes
     register: uname_result
+
+  - shell: lsb_release -cs
+    ignore_errors: yes
+    register: lsb_result
+
+  - name: Creating Filesystem
+    filesystem:
+      fstype: ext4
+      dev:  "{{ block_device }}"
+    tags: [filesystem]
+
+  - name: Adding dev to fstab
+    mount:
+      path: "{{ home_dir }}"
+      src: "{{ block_device }}"
+      fstype: ext4
+      state: present
+    tags: [fstab, mount]
+
+  - name: Creating homes directory
+    file: path=/opt/home state=directory
+
+  - name: Mounting device
+    shell: mount -a
 
   - name: Adding Python repo
     apt_repository:
@@ -39,7 +64,6 @@
       - "python2.7"
       - "git"
       - "xvfb"
-      - "python-passlib"
     tags: [basic, modules, packages]
 
   - name: Adding Oracle Java 8 repo
@@ -56,7 +80,42 @@
     with_items:
       - "oracle-java8-installer"
       - "oracle-java8-set-default"
-    tags: [java]
+    tags: [java, xserver]
+
+  - name: Adding Jenkins user
+    user: name=jenkins state=present home="{{ jenkins_dir }}"
+    tags: jenkins_user
+
+  - name: Insert Jenkins user to sudoers file
+    lineinfile: dest=/etc/sudoers line="Defaults:jenkins !requiretty"
+    tags: sudoers
+
+  - name: Insert Jenkins user to sudoers file
+    lineinfile: dest=/etc/sudoers  line="jenkins ALL=NOPASSWD:/usr/bin/Xvfb"
+    tags: sudoers
+
+  - name: Set authorized key, removing all the authorized key already set
+    authorized_key:
+      user: jenkins
+      key: '{{ item }}'
+      state: present
+      path: /opt/home/jenkins/.ssh/authorized_keys
+      exclusive: True
+    with_file:
+      - public_keys/jenkins.pub
+
+
+  - name: Creating homes directory
+    file: path={{ docker_dir }} state=directory
+
+  - name: Creating Symlink for docker home
+    file:
+      src: "{{ docker_dir }}"
+      dest: /var/lib/docker
+      owner: root
+      group: root
+      state: link
+    tags: [symlink]
 
   - name: Adding Docker GPG key
     apt_key: 
@@ -74,53 +133,9 @@
     apt:  name=docker-ce state=latest update_cache=yes
     tags: [docker, docker_software]
 
-  - name: Installing NGINX
-    apt:
-      name: nginx
-      state: latest
-    tags: [nginx]
-
-  - name: Generating htpasswd
-    htpasswd: path=/etc/nginx/sites-enabled/htpasswd name=someName password=somePassword
-    tags: htpasswd_gen
-
-  - name: Copying NGINX config for Jenkins
-    template: src=./templates/{{ item.src }} dest=/etc/nginx/sites-enabled/{{ item.dest }}
-    with_items:
-      - { src: "nginx.conf.j2", dest: "jenkins.conf" }
-      - { src: "nginx.api.conf.j2", dest: "api.conf" }
-    notify:
-      - nginx restart
-    tags: [nginx, nginx_config]
-
-  - name: Adding key for Jenkins
-    apt_key:
-      url: https://pkg.jenkins.io/debian-stable/jenkins.io.key
-      state: present
-    tags: [jenkins, jenkins_key]
-
-  - name: Adding Jenkins repo
-    apt_repository:
-      repo: deb https://pkg.jenkins.io/debian-stable binary/
-      state: present
-    tags: [jenkins, jenkins_repo]
-
-  - name: Installing Jenkins software
-    apt: name=jenkins state=latest
-    tags: [jenkins]
-
-  - name: Insert Jenkins user to sudoers file
-    lineinfile: dest=/etc/sudoers  line="jenkins ALL=NOPASSWD:/usr/bin/Xvfb"
-    tags: sudoers
-
   - name: Starting services
     service: name={{ item.service }} state={{ item.state }}
     with_items:
-      - { service: "nginx", state: "started" }
-      - { service: "jenkins", state: "started" }
       - { service: "docker", state: "started" }
-    tags: services
+    tags: [docker]
 
-  handlers:
-    - name: nginx restart
-      service: name=nginx state=restarted
