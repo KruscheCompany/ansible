@@ -150,5 +150,21 @@
     file: dest=/usr/local/bin/chromedriver mode=a+x
     tags: [chromedriver, chromedriver_chmod]
 
+  - name: Adding Google Chrome repo
+    apt_repository:
+      repo: deb http://dl.google.com/linux/chrome/deb/ stable main
+      state: present
+    tags: [googlechrome, googlechrome_repo]
+
+  - name: Adding Google Chrome key
+    apt_key:
+      url: "https://dl-ssl.google.com/linux/linux_signing_key.pub"
+      state: present
+    tags: [googlechrome, googlechrome_key]
+
+  - name: Installing Google Chrome
+    apt: name=google-chrome-stable state=latest update_cache=yes
+    tags: [googlechrome, googlechrome_bin]
+
 
 

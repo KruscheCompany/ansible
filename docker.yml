@@ -29,6 +29,12 @@
       state: present
     tags: [fstab, mount]
 
+  - name: Creating homes directory
+    file: path={{ docker_dir }} state=directory
+
+  - name: Mounting device
+    shell: mount -a
+
   - name: Creating Symlink for docker home
     file:
       src: "{{ docker_dir }}"
