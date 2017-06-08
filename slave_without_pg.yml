@@ -139,3 +139,16 @@
       - { service: "docker", state: "started" }
     tags: [docker]
 
+  - name: Downloading and unarchiving Chrome Driver
+    unarchive:
+      src: https://chromedriver.storage.googleapis.com/2.27/chromedriver_linux64.zip
+      dest: /usr/local/bin
+      remote_src: True
+    tags: [chromedriver, chromedriver_download]
+
+  - name: Changing perm of "chromedriver", adding "+x"
+    file: dest=/usr/local/bin/chromedriver mode=a+x
+    tags: [chromedriver, chromedriver_chmod]
+
+
+
